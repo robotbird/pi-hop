@@ -1,173 +1,271 @@
+<a id="readme-top"></a>
+
+<div align="center">
+
 # pi-hop
 
-**把当前 Pi 会话“跳”到另一台机器上继续。** 基于系统 SSH 的极简 Pi Extension：Mac → Linux、Mac → Mac，只需填一个地址；目标机器无需部署任何服务，收到后 `/hop resume` 即可无损续聊。
+**"Hop" your current Pi session to another machine and keep going — with zero context loss.**
 
-```
-Mac A（源）                                Linux / Mac B（目标）
-┌─────────────────────┐    SSH/SCP     ┌──────────────────────────────┐
-│ pi 运行中            │ ────────────▶ │ ~/.pi/agent/sessions/pi-hop/ │
-│ <uuid>.jsonl         │  sha256 校验   │   inbox/<uuid>.jsonl         │
-│ (/hop u@host)        │               │ (/hop resume → forkFrom 采用) │
-└─────────────────────┘               └──────────────────────────────┘
-```
+A minimal Pi extension built on plain system SSH: Mac → Linux, Mac → Mac, just type an address.
+The target machine needs **no service, no port** — after receiving, run `/hop resume` to continue the conversation seamlessly.
 
-## 一、解决的三个场景
+[![npm version](https://img.shields.io/npm/v/pi-hop.svg)](https://www.npmjs.com/package/pi-hop)
+[![npm downloads](https://img.shields.io/npm/dm/pi-hop.svg)](https://www.npmjs.com/package/pi-hop)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Stars](https://img.shields.io/github/stars/robotbird/pi-hop.svg)](https://github.com/robotbird/pi-hop/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/robotbird/pi-hop.svg)](https://github.com/robotbird/pi-hop/commits)
 
-| 场景 | 操作 |
-| --- | --- |
-| **Mac → Linux**：开发到一半要把任务搬到服务器 | 源机 `/hop user@192.168.1.105`，服务器上 `cd 项目目录 && pi`，输入 `/hop resume` |
-| **Mac → Mac**：换新电脑，完整带走当前会话 | 源机 `/hop user@新机IP`，新机 `/hop resume` |
-| **目标机无缝续任务** | 完整迁移 JSONL 历史（消息、工具调用、分支、Compaction、标签），续聊不丢上下文 |
+[Quick Start](#-quick-start) · [Commands](#-commands) · [How It Works](#%EF%B8%8F-how-it-works) · [Report Bug](https://github.com/robotbird/pi-hop/issues)
 
-## 二、命令
+**English** | [简体中文](README.zh-CN.md)
 
-| 命令 | 作用 |
-| --- | --- |
-| `/hop <user@host>` | 把当前会话发送到目标机器（如 `/hop ubuntu@192.168.1.105`） |
-| `/hop <user@host> --run` | 发送后让目标机的 pi **自动继续未完成的任务**（见下文） |
-| `/hop <user@host> --run <提示语> --dir <远端目录>` | 自定义续接指令与目标机工作目录 |
-| `/hop resume` | 在收件箱中选择一个收到的会话，采用并切换过去 |
-| `/hop list` | 查看收件箱、已归档会话与最近目标 |
-| `/hop` | 交互式菜单（发送 / 恢复 / 列表） |
-| `/hop-auto adopt <file>` | 内部命令：`--run` 在目标机上无头调用，完成采用并输出会话路径 |
+</div>
 
-命令参数支持自动补全（`resume`、`list`、最近目标）。
+<details open>
+<summary><b>📖 Table of Contents</b></summary>
 
-## 三、安装
+- [✨ Features](#-features)
+- [📦 Installation](#-installation)
+- [🚀 Quick Start](#-quick-start)
+- [📖 Usage](#-usage)
+  - [Commands](#-commands)
+  - [Typical Scenarios](#typical-scenarios)
+  - [Auto-running Unfinished Tasks: `--run`](#auto-running-unfinished-tasks---run)
+- [🏗️ How It Works](#%EF%B8%8F-how-it-works)
+- [🔒 Design Details](#-design-details)
+- [📁 Project Structure](#-project-structure)
+- [🧪 Testing](#-testing)
+- [🗺️ Roadmap](#%EF%B8%8F-roadmap)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+
+</details>
+
+## ✨ Features
+
+- **Byte-perfect migration** — the session JSONL is copied as-is: messages, tool calls, branch tree, compaction summaries and `/name` labels all survive the hop
+- **Zero server-side setup** — uses the system OpenSSH (`ssh`/`scp`); the receiver opens no service and no port
+- **SHA-256 end-to-end verification** — local hash is computed before transfer and compared with a hash read back on the remote side, so a corrupted transfer can never be mistaken for a good file
+- **Snapshot semantics** — the session is only copied once the agent is idle and fully flushed to disk; the source session is read-only and never modified
+- **Non-destructive adoption** — every resume creates a brand-new session file on the target machine; the inbox original is archived, nothing is overwritten or deleted
+- **One-time SSH setup** — first connection guides you through host-fingerprint verification and `ssh-copy-id`; after that, just `/hop <ip>`
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 📦 Installation
 
 ```bash
-# 从 npm 安装(推荐)
+# Install from npm (recommended)
 pi install npm:pi-hop
 
-# 从源码目录安装(开发)
+# Install from a local source directory (development)
 pi install ./pi-hop
 
-# 单次试用,不写入配置
+# Try it once without writing to your config
 pi -e ./pi-hop/src/index.ts
 ```
 
-两端各装一次即可。接收端**不需要开任何服务或端口**——发送端用系统 `ssh`/`scp` 把会话文件推到接收端固定收件箱 `~/.pi/agent/sessions/pi-hop/inbox/`。
+Install once on **both** machines. The receiver does **not** need any service or open port — the sender pushes the session file over system `ssh`/`scp` into a fixed inbox at `~/.pi/agent/sessions/pi-hop/inbox/`.
 
-### SSH 前置条件（一次性）
+### SSH Prerequisites (one-time)
 
-自动传输使用 `BatchMode`，因此需要免密登录。首次对某台机器发送时，若尚未配好，pi-hop 会主动引导：
+Automatic transfer runs in SSH `BatchMode`, so password-less login is required. The first time you send to a machine, pi-hop will guide you interactively if needed:
 
-1. **主机指纹未验证** → 提示后挂起 TUI，交互式执行 `ssh user@host exit`，由你自己确认指纹（pi-hop 绝不关闭 `StrictHostKeyChecking`）；
-2. **公钥未授权** → 提示后交互式执行 `ssh-copy-id user@host`，输一次密码即可；
-3. 之后同一台机器只需 `/hop <IP>`。
+1. **Host fingerprint not verified yet** → pi-hop suspends the TUI and runs `ssh user@host exit` so you can confirm the fingerprint yourself (pi-hop never disables `StrictHostKeyChecking`)
+2. **Public key not authorized yet** → pi-hop runs `ssh-copy-id user@host`; enter your password once
+3. After that, the same machine only ever needs `/hop <ip>`
 
-> 端口非 22 的机器，在 `~/.ssh/config` 里为它配一个 Host 别名，然后 `/hop 别名`。
+> For machines with a non-standard SSH port, give them a `Host` alias in `~/.ssh/config` and then `/hop <alias>`.
 
-## 四、工作原理
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
 
-### 发送端流程
+## 🚀 Quick Start
 
-```
-/hop user@host
-  1. 确认 Agent 空闲（isIdle）——只在会话落盘完成后复制
-  2. 读取当前会话文件（SessionManager.getSessionFile()），计算 SHA-256
-  3. ssh 探测连通性与认证（BatchMode，快速失败并分类错误）
-  4. ssh 'mkdir -p .pi/agent/sessions/pi-hop/inbox'
-  5. scp 会话文件 → 远端收件箱（文件名保持原样）
-  6. 远端 sha256sum / shasum -a 256 回读比对，不一致即报错
-  7. 成功：写入 targets.json 记住目标；在本会话追加一条 "pi-hop.send" 标记
-```
+```bash
+# 1. On the target machine: install pi-hop once, then open pi in your project directory
+pi install npm:pi-hop
+cd ~/my-project && pi
 
-进度对话框实时显示各阶段，`Esc` 可中断（杀掉 ssh/scp 子进程）；源会话只读不删。
+# 2. On the source machine: hop the current session over
+/hop ubuntu@192.168.1.105
 
-### 接收端流程
-
-```
+# 3. On the target machine: adopt the received session and keep chatting
 /hop resume
-  1. 列出 inbox/*.jsonl（解析出会话名/首条用户消息/条目数/来源目录/时间/大小）
-  2. 选择后确认 → SessionManager.forkFrom(收件箱文件, 当前目录)
-     —— 这是 Pi 官方的“跨项目采用会话”机制：
-        · 除 header 外所有条目逐字节复制（消息、工具调用、分支树、Compaction…）
-        · 新 header：新会话 ID + 本机当前工作目录
-  3. ctx.switchSession() 切换到采用后的会话 → 上下文完整恢复，直接继续提问
-  4. 收件箱原件移入 inbox/imported/ 归档（不覆盖、可找回）
 ```
 
-**为什么能“无缝衔接”：** Pi 的上下文重建完全由会话文件驱动。JSONL 原样迁移后，模型侧看到的对话、分支位置、压缩摘要与源机一致；唯一变化是 header 的 `cwd` 被重映射到目标机的当前目录，因此工具操作直接作用于目标机上的项目。
+That's it — the full conversation history (messages, tool calls, branches, compaction) is restored and you can continue asking questions immediately.
 
-### 自动执行未完成任务：`--run`
+```mermaid
+flowchart LR
+    A["Mac A (source)<br/>pi running<br/>&lt;uuid&gt;.jsonl"] -- "SSH / SCP<br/>SHA-256 verified" --> B["Linux / Mac B (target)<br/>~/.pi/agent/sessions/<br/>pi-hop/inbox/"]
+    B -- "/hop resume<br/>forkFrom adopt" --> C["Session adopted<br/>context fully restored"]
+```
 
-发送只是第一步，`--run` 让目标机自己把活干完：
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 📖 Usage
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `/hop <user@host>` | Send the current session to the target machine (e.g. `/hop ubuntu@192.168.1.105`) |
+| `/hop <user@host> --run` | After sending, have pi on the target machine **continue an unfinished task automatically** (see below) |
+| `/hop <user@host> --run <prompt> --dir <remote-dir>` | Customize the continuation prompt and the remote working directory |
+| `/hop resume` | Pick a received session from the inbox, adopt it and switch to it |
+| `/hop list` | Browse the inbox, archived sessions and recent targets |
+| `/hop` | Interactive menu (send / resume / list) |
+| `/hop-auto adopt <file>` | Internal command: headlessly invoked by `--run` on the target machine; adopts the file and prints the new session path |
+
+Command arguments support autocompletion (`resume`, `list`, recent targets).
+
+### Typical Scenarios
+
+| Scenario | What you do |
+| --- | --- |
+| **Mac → Linux**: move a half-finished task to your server | Source: `/hop user@192.168.1.105`; server: `cd <project> && pi`, then `/hop resume` |
+| **Mac → Mac**: switch to a new laptop and take the session with you | Source: `/hop user@<new-machine-ip>`; new machine: `/hop resume` |
+| **Seamless continuation** | The full JSONL history (messages, tool calls, branches, compaction, labels) is migrated — keep chatting without losing context |
+
+### Auto-running Unfinished Tasks: `--run`
+
+Sending is only step one — `--run` lets the target machine finish the job by itself:
 
 ```bash
 /hop ubuntu@192.168.1.105 --run
-# 或指定远端目录与续接指令：
-/hop ubuntu@192.168.1.105 --run --dir /srv/myapp "完成 CI 里失败的那个测试"
+# or specify the remote directory and a custom continuation prompt:
+/hop ubuntu@192.168.1.105 --run --dir /srv/myapp "Finish the test that's failing in CI"
 ```
 
-发送与校验流程与普通模式完全相同，之后插件通过同一条 SSH 通道在目标机上依次执行：
+The send-and-verify flow is identical to normal mode. Afterwards, over the same SSH channel, the extension runs on the target machine:
 
 ```
-1. mkdir -p <远端目录>            # 默认 ~/pi-hop-workspace/<项目名>，--dir 可覆盖
+1. mkdir -p <remote-dir>            # default: ~/pi-hop-workspace/<project>, override with --dir
 2. pi --print --no-session \
-     "/hop-auto adopt <inbox文件>"  # 远端无头采用，stdout 返回新会话路径
-3. pi --print --session <新会话> \
-     "<续接指令>"                  # 目标机 pi 无头续跑，可执行工具、耗时数分钟
-   └─ 默认指令：审阅上方历史 → 找出未完成工作 → 自主执行到完成 → 总结
+     "/hop-auto adopt <inbox-file>" # headless adopt on the remote side; stdout returns the new session path
+3. pi --print --session <new-session> \
+     "<continuation prompt>"        # headless continuation run; may use tools and take minutes
+   └─ default prompt: review the history above → find unfinished work → autonomously execute it to completion → summarize
 ```
 
-执行结束后：完整 stdout/stderr 写入本机 `~/.pi/agent/sessions/pi-hop/last-remote-run.log`，通知里展示退出码与输出尾部；远端的续跑记录保存在目标机那个会话文件里，随时可登过去 `pi --resume` 接着人工推进。`Esc` 中断监控时会一并杀掉远端 pi（SSH 通道断开 → SIGHUP）。
+When it finishes, the full stdout/stderr is written to `~/.pi/agent/sessions/pi-hop/last-remote-run.log` on your machine; the notification shows the exit code and the tail of the output. The continuation run itself lives in the target machine's session file — SSH in and `pi --resume` anytime to take over manually. Pressing `Esc` while monitoring also kills the remote pi (SSH channel drops → SIGHUP).
 
-`--run` 的前提与边界：
+**Requirements and caveats of `--run`:**
 
-- 目标机已 `pi install ./pi-hop`，且已登录模型（先手动跑过一次 pi）；
-- 项目文件需已存在于目标机（`--dir` 指向已有的 checkout），pi-hop 不迁移代码；
-- 远程执行消耗的是目标机配置的模型额度；
-- Mac 合盖/断网会中断 SSH 通道从而终止远端任务——长任务建议放在真实服务器上跑。
+- The target machine has `pi install ./pi-hop` **and** is already logged in to a model (has run `pi` interactively at least once)
+- Project files must already exist on the target (`--dir` points at an existing checkout); pi-hop does **not** migrate code
+- Remote execution consumes the model quota configured on the *target* machine
+- Closing the lid or losing network kills the SSH channel and thus the remote task — for long jobs, use a real server
 
-## 五、不可省略的设计细节（对照需求）
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
 
-1. **原样保留 JSONL**：不做 Markdown 转换、不重新生成摘要。工具调用、会话树、Compaction、`/name` 名称全部逐字节迁移；采用时仅重写 header（新 ID + 本机 cwd）。
-2. **SSH 传输**：系统 OpenSSH，无自建服务端。首次连接完成指纹验证与密钥授权，之后同机只填 IP；连不上/认证失败时报错并分类给出明确指引。
-3. **快照语义 + SHA-256 校验**：仅在 Agent 空闲、会话落盘后复制；本地哈希先于 scp 计算，与远端回读哈希比对，杜绝传输损坏被当成正常文件。发送后的新增消息不属于快照（复制式迁移的固有语义）。
-4. **接收端不覆盖现有会话**：每次采用都生成新会话文件（新 ID）落入当前目录的标准会话目录；收件箱原件归档不删除。
-5. **源端不删除历史**：纯复制迁移，恢复后两端独立演进，不做双向合并。
-6. **明确的边界**：迁移的是**完整会话历史**，不是**完整执行环境**。目标机仍需自己的模型认证、扩展与项目文件；源会话依赖的系统提示词、工作区规则、外部文件可能随机器不同而不同。“上下文完整”指历史数据不缺失。
+## 🏗️ How It Works
 
-## 六、目录结构
+### Sender flow
+
+```
+/hop user@host
+  1. Confirm the agent is idle (isIdle) — copy only after the session is flushed to disk
+  2. Read the current session file (SessionManager.getSessionFile()), compute SHA-256
+  3. Probe connectivity/auth over ssh (BatchMode; fail fast and classify the error)
+  4. ssh 'mkdir -p .pi/agent/sessions/pi-hop/inbox'
+  5. scp the session file → remote inbox (filename kept as-is)
+  6. Read back the remote hash (sha256sum / shasum -a 256) and compare; mismatch = error
+  7. On success: record the target in targets.json; append a "pi-hop.send" marker to this session
+```
+
+A progress dialog shows each stage in real time; `Esc` aborts (killing the ssh/scp child processes). The source session is read-only — nothing is deleted.
+
+### Receiver flow
+
+```
+/hop resume
+  1. List inbox/*.jsonl (parsing session name / first user message / entry count / source dir / time / size)
+  2. Pick one and confirm → SessionManager.forkFrom(inbox file, current directory)
+     — this is Pi's official "adopt a session across projects" mechanism:
+       · every entry except the header is copied byte-for-byte (messages, tool calls, branch tree, compaction…)
+       · new header: new session ID + the local working directory
+  3. ctx.switchSession() switches to the adopted session → context fully restored, keep asking
+  4. The inbox original is moved to inbox/imported/ (archived, never overwritten, recoverable)
+```
+
+**Why it's seamless:** Pi rebuilds context entirely from the session file. Once the JSONL is migrated as-is, the model sees the same conversation, branch positions and compaction summaries as on the source machine. The only change is the header's `cwd`, remapped to the target machine's current directory — so tool operations act directly on the project that lives there.
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 🔒 Design Details
+
+1. **JSONL preserved as-is** — no Markdown conversion, no summary regeneration. Tool calls, session tree, compaction and `/name` labels all migrate byte-for-byte; adoption only rewrites the header (new ID + local cwd).
+2. **SSH transport** — system OpenSSH, no self-built server. The first connection handles fingerprint verification and key authorization; afterwards the same machine only needs the IP. Connection/auth failures are classified with actionable guidance.
+3. **Snapshot semantics + SHA-256** — the file is copied only when the agent is idle and flushed; the local hash is computed before scp and compared against the read-back remote hash, so transport corruption can never pass as a valid file. Messages appended after sending are not part of the snapshot (inherent semantics of copy-style migration).
+4. **The receiver never overwrites existing sessions** — every adoption creates a new session file (new ID) in the standard session directory of the current project; the inbox original is archived, not deleted.
+5. **The sender never deletes history** — pure copy migration; after resuming, both ends evolve independently, with no bidirectional merging.
+6. **Clear boundaries** — what migrates is the **full session history**, not a **full execution environment**. The target still needs its own model auth, extensions and project files; system prompts, workspace rules and external files the source session depended on may differ across machines. "Full context" means no historical data is missing.
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 📁 Project Structure
 
 ```
 pi-hop/
-├── package.json          # pi 包清单（pi.extensions 指向 src/index.ts）
-├── tsconfig.json         # 类型检查（npm run typecheck）
+├── package.json          # pi package manifest (pi.extensions → src/index.ts)
+├── tsconfig.json         # type checking (npm run typecheck)
 ├── README.md
-├── smoke.ts              # 冒烟测试（解析/采用/校验，node smoke.ts）
-├── transfer-e2e.ts       # 传输端到端测试（配合 fake ssh/scp shim）
-├── corrupt-e2e.ts        # 传输损坏检测测试
+├── smoke.ts              # smoke tests (parse/adopt/verify — node smoke.ts)
+├── transfer-e2e.ts       # transfer end-to-end tests (with fake ssh/scp shims)
+├── corrupt-e2e.ts        # corruption-detection tests
 └── src/
-    ├── index.ts          # /hop 命令入口、UI 流程、进度对话框、传输标记渲染
-    ├── transfer.ts       # SSH/SCP 传输、错误分类、sha256、交互式首次连接
-    └── session.ts        # 收件箱解析、forkFrom 采用、归档、目标记忆
+    ├── index.ts          # /hop command entry, UI flow, progress dialog, transfer markers
+    ├── transfer.ts       # SSH/SCP transfer, error classification, sha256, interactive first connect
+    └── session.ts        # inbox parsing, forkFrom adoption, archiving, target memory
 ```
 
-运行时数据（两端同路径，便于发送端寻址）：
+Runtime data (same path on both ends, so the sender can address it):
 
 ```
 ~/.pi/agent/sessions/pi-hop/
-├── inbox/            # 收到的会话（*.jsonl）
-│   └── imported/     # 已采用会话的归档
-└── targets.json      # 最近发送目标（最多 10 个）
+├── inbox/            # received sessions (*.jsonl)
+│   └── imported/     # archive of adopted sessions
+└── targets.json      # recent send targets (max 10)
 ```
 
-## 七、测试
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 🧪 Testing
 
 ```bash
-npm install          # 安装 typescript/@types（类型检查用）
+npm install          # install typescript/@types (for type checking)
 npm run typecheck    # tsc --noEmit
-node smoke.ts        # 21 项：目标解析、sha256、收件箱解析、forkFrom 采用、归档
+node smoke.ts        # 21 checks: target parsing, sha256, inbox parsing, forkFrom adoption, archiving
 ```
 
-传输链路可用 fake ssh/scp shim（模拟远端 mkdir/scp/sha256sum）做端到端验证，覆盖：正常传输、内容逐字节一致、传输中被篡改时校验失败。真实双机验收按“三个场景”手工执行。
+The transfer pipeline can be verified end-to-end with fake ssh/scp shims (simulating remote mkdir/scp/sha256sum), covering: normal transfer, byte-for-byte content equality, and checksum failure when the payload is tampered with in transit. Real two-machine acceptance follows the "typical scenarios" manually.
 
-## 八、当前边界与后续（P1+）
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
 
-- 暂不支持非 22 端口的命令行直填（用 `~/.ssh/config` 别名）、IPv6 地址、多会话批量发送；
-- 暂不做：文件/配置/后台任务同步、双向同步合并、设备自动发现——避免 MVP 膨胀；
-- 可选增强：目标机别名、`/hop send` 显式子命令、发送后自动提示远端 `pi --session` 直开。
+## 🗺️ Roadmap
 
-**定位：pi-hop 是一个轻量级、基于 SSH 的 Pi 会话迁移插件，而不是远程开发框架。**
+- [ ] Non-standard SSH ports directly on the command line (currently: `~/.ssh/config` alias), IPv6 addresses, batch sending of multiple sessions
+- [ ] Optional enhancements: target aliases, an explicit `/hop send` subcommand, post-send hint to open the remote session directly with `pi --session`
+- [ ] Explicitly out of scope: file/config/background-task sync, bidirectional merge, device auto-discovery — to keep the MVP lean
+
+**Positioning: pi-hop is a lightweight, SSH-based Pi session migration extension — not a remote development framework.**
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome!
+
+- 🐛 [Report a bug](https://github.com/robotbird/pi-hop/issues/new?labels=bug)
+- 💡 [Request a feature](https://github.com/robotbird/pi-hop/issues/new?labels=enhancement)
+
+Before submitting, please run `npm run typecheck && node smoke.ts` locally.
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
+
+## 📄 License
+
+Distributed under the [MIT License](./LICENSE).
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
