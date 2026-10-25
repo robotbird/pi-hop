@@ -1,9 +1,25 @@
 {
   "name": "pi-hop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Send the current Pi session to another machine over SSH (Mac → Linux, Mac → Mac) and resume it there without losing context.",
   "type": "module",
-  "keywords": ["pi-package", "pi", "coding-agent", "session", "ssh", "transfer"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robotbird/pi-hop.git"
+  },
+  "homepage": "https://github.com/robotbird/pi-hop#readme",
+  "bugs": {
+    "url": "https://github.com/robotbird/pi-hop/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "coding-agent",
+    "session",
+    "ssh",
+    "transfer",
+    "extension"
+  ],
   "license": "MIT",
   "files": [
     "src",
@@ -11,7 +27,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

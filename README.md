@@ -24,6 +24,7 @@ The target machine needs **no service, no port** — after receiving, run `/hop 
 <details open>
 <summary><b>📖 Table of Contents</b></summary>
 
+- [🎯 Why This Exists](#-why-this-exists)
 - [✨ Features](#-features)
 - [📦 Installation](#-installation)
 - [🚀 Quick Start](#-quick-start)
@@ -40,6 +41,14 @@ The target machine needs **no service, no port** — after receiving, run `/hop 
 - [📄 License](#-license)
 
 </details>
+
+## 🎯 Why This Exists
+
+You're deep in a task on your Mac — then you need to move: to a beefy Linux server, to a new laptop, or the machine next to you. Copy-pasting the conversation doesn't work: tool calls, branches and compaction summaries don't survive it, and the agent loses the thread.
+
+pi-hop treats the session file as the single source of truth. One command pushes it over SSH — the same SSH you already trust — and the target machine adopts it byte-for-byte, so the conversation continues exactly where it left off. No sync services, no accounts, no ports to open.
+
+<p align="right">(<a href="#readme-top">back to top ⬆️</a>)</p>
 
 ## ✨ Features
 
