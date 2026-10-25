@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@earendil-works/pi-coding-agent": ["/Users/robotbird/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-coding-agent/index.d.ts"],
+      "@earendil-works/pi-tui": ["/Users/robotbird/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-tui/index.d.ts"],
+      "@earendil-works/pi-ai": ["/Users/robotbird/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-ai/index.d.ts"],
+      "@earendil-works/pi-agent-core": ["/Users/robotbird/.pi/agent/install/releases/1.4.0/node_modules/@earendil-works/pi-agent-core/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

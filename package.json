@@ -1,0 +1,29 @@
+{
+  "name": "pi-hop",
+  "version": "0.1.0",
+  "description": "Send the current Pi session to another machine over SSH (Mac → Linux, Mac → Mac) and resume it there without losing context.",
+  "type": "module",
+  "keywords": ["pi-package", "pi", "coding-agent", "session", "ssh", "transfer"],
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
